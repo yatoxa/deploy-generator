@@ -1,0 +1,64 @@
+- hosts: '{{ group_name }}'
+  gather_facts: yes
+  become: yes
+
+  tasks:
+    - ping:
+
+    - name: install required packages
+      apt:
+        name: '{{ item }}'
+        state: latest
+        update_cache: yes
+        cache_valid_time: 3600
+      with_items:
+        - apt-transport-https
+        - ca-certificates
+        - python-pip
+
+    - name: install docker-py
+      pip:
+        name: docker-py
+        state: latest
+
+    - name: add the new GPG key for docker repository
+      apt_key:
+        id: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: add specified docker repository
+      apt_repository:
+        repo: 'deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable'
+        state: present
+
+    - name: install linux-image-extra-* packages if ubuntu-trusty
+      apt:
+        name: '{{ item }}'
+        state: latest
+        update_cache: yes
+      with_items:
+        - linux-image-extra-{{ ansible_kernel }}
+        - linux-image-extra-virtual
+      when:
+        - ansible_distribution_release == 'trusty'
+
+    - name: install recommended packages and docker-engine
+      apt:
+        name: '{{ item }}'
+        state: latest
+        update_cache: yes
+      with_items:
+        - docker-ce
+
+    - name: restart docker service
+      service:
+        name: docker
+        state: restarted
+        enabled: yes
+
+    - name: put ansible_user to docker group
+      user:
+        name: '{{ ansible_user }}'
+        groups: docker
+        append: yes

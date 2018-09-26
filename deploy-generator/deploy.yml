@@ -1,0 +1,123 @@
+settings:
+  base_dir:
+  static_dir:
+  templates_dir:
+  deploy_dir:
+
+services:
+  registry:
+    tag: 2
+    host: '{{ groups["registry"][0] }}'
+    port: 5000
+    cph: 1
+    image: registry
+    ports:
+      - '{{ registry_port }}:{{ registry_port }}'
+    volumes:
+      - /var/lib/registry:/var/lib/registry
+      - /etc/hosts:/etc/hosts
+    env:
+      REGISTRY_STORAGE_DELETE_ENABLED: True
+
+  cadvisor:
+    tag: v1
+    tag_prev: v0
+    registry_dir: cadvisor
+    port: 8080
+    cph: 1
+    image: '{{ registry_host }}:{{ registry_port }}/{{ cadvisor_registry_dir }}'
+    ports:
+      - '{{ cadvisor_port }}:{{ cadvisor_port }}'
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  grafana:
+    tag: v1
+    tag_prev: v0
+    registry_dir: grafana
+    host: '{{ groups["grafana"][0] }}'
+    port: 3000
+    cph: 1
+    image: '{{ registry_host }}:{{ registry_port }}/{{ grafana_registry_dir }}'
+    ports:
+      - '{{ grafana_port }}:{{ grafana_port }}'
+    volumes:
+      - /var/lib/grafana:/var/lib/grafana
+    env:
+      GF_SERVER_ROOT_URL: 'http://{{ grafana_host }}:{{ grafana_port }}'
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: changeme
+      GF_USERS_ALLOW_SIGN_UP: false
+
+  nodeexporter:
+    tag: v1
+    tag_prev: v0
+    registry_dir: nodeexporter
+    port: 9100
+    cph: 1
+    image: '{{ registry_host }}:{{ registry_port }}/{{ nodeexporter_registry_dir }}'
+    network_mode: 'host'
+    ports:
+      - '{{ nodeexporter_port }}:{{ nodeexporter_port }}'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  prometheus:
+    tag: v1
+    tag_prev: v0
+    registry_dir: prometheus
+    host: '{{ groups["prometheus"][0] }}'
+    port: 9090
+    cph: 1
+    image: '{{ registry_host }}:{{ registry_port }}/{{ prometheus_registry_dir }}'
+    ports:
+      - '{{ prometheus_port }}:{{ prometheus_port }}'
+    volumes:
+      - /var/lib/prometheus:/var/lib/prometheus
+
+environments:
+  develop:
+    ci:
+      - 192.168.33.100
+    registry:
+      - 192.168.33.100
+    prometheus:
+      - 192.168.33.100
+    grafana:
+      - 192.168.33.100
+
+  stage:
+    ci:
+    registry:
+    prometheus:
+    grafana:
+
+  production:
+    ci:
+    registry:
+    prometheus:
+    grafana:
+
+groups:
+  docker:
+    - ci
+    - registry
+    - prometheus
+    - grafana
+
+  cadvisor:
+    - docker
+
+  nodeexporter:
+    - docker
+
+  monitoring:
+    - cadvisor
+    - nodeexporter
+    - prometheus
+    - grafana
