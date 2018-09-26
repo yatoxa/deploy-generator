@@ -1,0 +1,17 @@
+- hosts: ${service}
+  gather_facts: no
+  become: yes
+
+  tasks:
+    - ping:
+
+    - name: present ${service} docker container
+      docker_container:
+        name: '${service}_{{ ${service}_tag }}_{{ inventory_hostname }}'
+        image: '{{ ${service}_image }}:{{ ${service}_tag }}'
+        state: present
+        volumes: '{{ ${service}_volumes }}'
+        ports: '{{ ${service}_ports }}'
+        restart_policy: on-failure
+        restart_retries: 5
+        env: '{{ ${service}_env }}'

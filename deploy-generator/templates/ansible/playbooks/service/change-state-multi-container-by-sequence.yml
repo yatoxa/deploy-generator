@@ -1,0 +1,10 @@
+- hosts: ${service}
+  gather_facts: no
+  become: yes
+
+  tasks:
+    - name: change state for ${service} docker container
+      docker_container:
+        name: '${service}_{{ image_tag }}_{{ inventory_hostname }}_{{ item }}'
+        state: '{{ container_state }}'
+      with_items: '{{ ${service}_upstream_ports[:${service}_cph] }}'

@@ -243,19 +243,22 @@ class Generate(object):
                 inventory.write(inventory_file)
 
     def generate_playbooks(self):
-        for name, context in self.config.get_services().items():
+        for service, context in self.config.get_services().items():
             for template in self.templates:
                 playbook_file_path = os.path.join(
                     self.deploy_dir,
                     '{service}-{template}'.format(
-                        service=name,
+                        service=service,
                         template=template.rsplit('/', maxsplit=1)[-1]
                     )
                 )
 
                 with open(playbook_file_path, 'w') as playbook:
                     playbook.write(
-                        Template(filename=template).render(**context)
+                        Template(filename=template).render(
+                            service=service,
+                            **context
+                        )
                     )
 
     def do(self):

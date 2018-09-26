@@ -1,0 +1,7 @@
+FROM prom/prometheus
+
+ADD prometheus.yml /etc/prometheus/
+
+CMD ["-config.file=/etc/prometheus/prometheus.yml", \
+     "-storage.local.path=/prometheus", \
+     "-storage.local.memory-chunks=100000"]

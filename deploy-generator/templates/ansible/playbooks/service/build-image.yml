@@ -1,0 +1,12 @@
+- hosts: ci
+  gather_facts: no
+  become: yes
+
+  vars:
+    image_name: '{{ ${service}_registry_dir }}'
+    image_tag: '{{ ${service}_tag }}'
+    registry_dir: '{{ ${service}_registry_dir }}'
+
+  roles:
+    - ping
+    - docker-image-build

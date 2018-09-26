@@ -1,0 +1,30 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+
+  external_labels:
+      monitor: 'deploy-vagrant-ansible-docker'
+
+
+scrape_configs:
+  - job_name: 'nodeexporter'
+    scrape_interval: 5s
+    static_configs:
+      - targets:
+{% for host in groups['nodeexporter'] %}
+        - {{ host }}:{{ nodeexporter_port }}
+{% endfor %}
+
+  - job_name: 'cadvisor'
+    scrape_interval: 5s
+    static_configs:
+      - targets:
+{% for host in groups['cadvisor'] %}
+        - {{ host }}:{{ cadvisor_port }}
+{% endfor %}
+
+  - job_name: 'prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+        - {{ prometheus_host }}:{{ prometheus_port }}
