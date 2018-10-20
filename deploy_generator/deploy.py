@@ -4,6 +4,7 @@ import os
 import sys
 import yaml
 import shutil
+import argparse
 import configparser
 
 from itertools import chain
@@ -273,34 +274,106 @@ class Generate(object):
 
 
 class Deploy(object):
-    """
-        -v, --version   Print the version and exit.
-        -h, --help      Print this help.
 
-        -c, --config    Configuration file path.
-
-    Common commands:
-        init            Initializes a new deploy environment
-                        by creating a deploy.yml file.
-
-        generate        Generate Ansible playbooks.
-
-        list            Shows list of services and possible actions for them.
-        status          Shows statuses of a service`s containers.
-
-        build           Builds a service`s containers.
-        deploy          Deploys a service`s containers.
-        start           Starts a service`s containers.
-        stop            Stops a service`s containers.
-        restart         Restarts a service`s containers.
-        upgrade         Upgrades a service`s containers: stops containers of
-                        the previous version and then starts a new ones.
-        rollback        Rollback a service`s containers: stops containers of
-                        the new version and then starts a previous ones.
-    """
+    ACTION_CHOICES = OrderedDict(
+        init=dict(
+            help='Initializes a new deploy environment by creating'
+                 ' a deploy.yml file.',
+        ),
+        generate=dict(
+            help='Generates Ansible playbooks.',
+        ),
+        list=dict(
+            help='Shows list of services and possible actions for them.',
+        ),
+        status=dict(
+            help='Shows statuses of a service`s containers.',
+        ),
+        build=dict(
+            help='Builds a service`s containers.',
+        ),
+        deploy=dict(
+            help='Deploys a service`s containers.',
+        ),
+        start=dict(
+            help='Starts a service`s containers.',
+        ),
+        stop=dict(
+            help='Stops a service`s containers.',
+        ),
+        restart=dict(
+            help='Restarts a service`s containers.',
+        ),
+        upgrade=dict(
+            help='Upgrades a service`s containers: stops containers'
+                 ' of the previous version and then starts a new ones.',
+        ),
+        rollback=dict(
+            help='Rollback a service`s containers: stops containers'
+                 ' of the new version and then starts a previous ones.',
+        ),
+    )
 
     def __init__(self):
+        (
+            self.config,
+            self.action,
+            self.action_args,
+            self.action_kwargs,
+        ) = self._parse_cmd_args()
+
+    def _init_cmd_args(self):
+        cmd_args_parser = argparse.ArgumentParser()
+        cmd_args_parser.add_argument(
+            '-v',
+            '--version',
+            help='Print the version and exit.'
+        )
+        cmd_args_parser.add_argument(
+            '-c',
+            '--config',
+            help='Configuration file path.'
+        )
+
+        action_group = cmd_args_parser.add_mutually_exclusive_group()
+
+        for action, params in self.ACTION_CHOICES.items():
+            action_group.add_argument(action, nargs='?', **params)
+
+        return cmd_args_parser.parse_args()
+
+    def _parse_cmd_args(self):
+        action = None
+        action_args = []
+        action_kwargs = {}
+
+        args = self._init_cmd_args()
+
+        if args.version:
+            pass
+
+        config = Config(conf_file=args.config or None)
+
+        return config, action, action_args, action_kwargs
+
+    def dispatch(self):
+        if self.action in self.ACTION_CHOICES:
+            action_handler = getattr(
+                self, 'action_{}'.format(self.action), self.wrong_action_handler
+            )
+        else:
+            action_handler = self.wrong_action_handler
+
+        return action_handler
+
+    def wrong_action_handler(self):
         pass
+
+    def action_init(self):
+        pass
+
+    def action_generate(self):
+        return Generate(config=self.config).do()
 
     def action_list(self):
         pass
@@ -309,12 +382,19 @@ class Deploy(object):
         pass
 
     def run(self):
-        pass
+        action_handler = self.dispatch()
+
+        try:
+            action_handler()
+        except Exception:
+            # TODO: log error!
+            return 1
+
+        return 0
 
 
 def main():
-    config = Config()
-    Generate(config=config).do()
+    return Deploy().run()
 
 
 if __name__ == '__main__':
