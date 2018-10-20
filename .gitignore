@@ -5,5 +5,7 @@ __pycache__/
 *.pyc
 *.log
 *.sqlite3
+*.egg-info
 
+dist/
 deploy/

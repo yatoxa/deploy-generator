@@ -1,0 +1,9 @@
+include LICENSE
+include README.rst
+
+recursive-include docs *
+
+include deploy_generator/deploy.yml
+
+recursive-include deploy_generator/static *
+recursive-include deploy_generator/templates *

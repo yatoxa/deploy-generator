@@ -49,10 +49,15 @@ def yaml_dict_order_preserve():
 yaml_dict_order_preserve()
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATIC_DIR = os.path.join(BASE_DIR, 'static')
-TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
-DEPLOY_DIR = os.path.join(BASE_DIR, 'deploy')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_STATIC_DIR = os.path.join(BASE_DIR, 'static')
+BASE_TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
+
+EXAMPLE_CONF_FILE = os.path.join(BASE_DIR, 'deploy.yml')
+
+WORKING_DIR = os.getcwd()
+DEPLOY_DIR = os.path.join(WORKING_DIR, 'deploy')
+CONF_FILE = os.path.join(WORKING_DIR, 'deploy.yml')
 
 DEPLOY_PROVIDER = 'ansible'
 
@@ -70,10 +75,9 @@ class ImproperlyConfiguredError(Exception):
 
 
 class Config(object):
-    default_conf_file = os.path.join(BASE_DIR, 'deploy.yml')
 
     def __init__(self, conf_file=None):
-        self.conf_file = conf_file or self.default_conf_file
+        self.conf_file = conf_file or CONF_FILE
 
         with open(self.conf_file) as conf_file:
             self._config = yaml.safe_load(conf_file)
@@ -106,7 +110,7 @@ class Config(object):
 
 
 class Action(object):
-    working_dir = os.path.join(BASE_DIR, '..')
+    working_dir = DEPLOY_DIR
     playbook_exec_command = 'ansible-playbook'
     template_name = ''
 
@@ -168,9 +172,9 @@ class Generate(object):
 
         settings = self.config.get_settings()
         self.deploy_dir = settings.get('deploy_dir') or DEPLOY_DIR
-        self.static_dir = settings.get('static_dir') or STATIC_DIR
+        self.static_dir = settings.get('static_dir') or BASE_STATIC_DIR
 
-        templates_dir = settings.get('templates_dir') or TEMPLATES_DIR
+        templates_dir = settings.get('templates_dir') or BASE_TEMPLATES_DIR
         self.deploy_provider = settings.get('deploy_provider') or DEPLOY_PROVIDER
 
         service_templates_dir = os.path.join(
@@ -276,6 +280,9 @@ class Deploy(object):
         -c, --config    Configuration file path.
 
     Common commands:
+        init            Initializes a new deploy environment
+                        by creating a deploy.yml file.
+
         generate        Generate Ansible playbooks.
 
         list            Shows list of services and possible actions for them.
