@@ -1,11 +1,13 @@
-venv/
 .idea/
+.vagrant/
 __pycache__/
 
 *.pyc
 *.log
+*.retry
 *.sqlite3
 *.egg-info
 
+venv/
 dist/
 deploy/
