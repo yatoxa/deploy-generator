@@ -4,6 +4,14 @@ settings:
   templates_dir:
   deploy_dir:
 
+custom_playbooks:
+  fpb:
+    playbook: first_custom_playbook.yml
+    params: '-i inventory_{0}.ini -e group_name={1}'
+    usage: 'ENV_NAME SERVICE_NAME'
+    help:
+  spb: another_one.yml
+
 services:
   registry:
     tag: 2

@@ -51,16 +51,14 @@ yaml_dict_order_preserve()
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_STATIC_DIR = os.path.join(BASE_DIR, 'static')
-BASE_TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
+TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
 
 EXAMPLE_CONF_FILE = os.path.join(BASE_DIR, 'deploy.yml')
 
 WORKING_DIR = os.getcwd()
 DEPLOY_DIR = os.path.join(WORKING_DIR, 'deploy')
 CONF_FILE = os.path.join(WORKING_DIR, 'deploy.yml')
-
-DEPLOY_PROVIDER = 'ansible'
 
 
 class InventoryFileNotFoundError(Exception):
@@ -100,6 +98,9 @@ class Config(object):
     def get_settings(self):
         return self._get_config_section('settings', dict)
 
+    def get_custom_playbooks(self):
+        return self._get_config_section('custom_playbooks', dict)
+
     def get_services(self):
         return self._get_config_section('services', dict)
 
@@ -110,12 +111,30 @@ class Config(object):
         return self._get_config_section('groups', dict)
 
 
-class Action(object):
-    working_dir = DEPLOY_DIR
-    playbook_exec_command = 'ansible-playbook'
-    template_name = ''
+class BaseAction(object):
 
-    def __init__(self, environment_name, command_name, service_name=None, **kwargs):
+    def __init__(self, config):
+        self.config = config
+        settings = self.config.get_settings()
+        self.deploy_dir = settings.get('deploy_dir') or DEPLOY_DIR
+
+    def do(self):
+        raise NotImplementedError
+
+
+class Action(BaseAction):
+    playbook_exec_command = 'ansible-playbook'
+
+    def __init__(
+            self,
+            config,
+            environment_name,
+            command_name,
+            service_name=None,
+            **kwargs
+    ):
+        super(Action, self).__init__(config)
+
         self.environment_name = environment_name
         self.service_name = service_name
         self.command_name = command_name
@@ -124,13 +143,13 @@ class Action(object):
     def resolve_inventory_file_name(self):
         inventory_file_name = 'inventory-%s.ini' % self.environment_name
 
-        if os.path.exists(os.path.join(self.working_dir, inventory_file_name)):
+        if os.path.exists(os.path.join(self.deploy_dir, inventory_file_name)):
             return inventory_file_name
 
         raise InventoryFileNotFoundError
 
     def resolve_playbook_file_name(self):
-        _, _, files = next(os.walk(self.working_dir))
+        _, _, files = next(os.walk(self.deploy_dir))
         names = []
 
         if self.service_name:
@@ -166,22 +185,18 @@ class TrueIndentDumper(yaml.Dumper):
         )
 
 
-class Generate(object):
+class Generate(BaseAction):
 
-    def __init__(self, config=None):
-        self.config = config or Config()
-
+    def __init__(self, config):
+        super(Generate, self).__init__(config)
         settings = self.config.get_settings()
-        self.deploy_dir = settings.get('deploy_dir') or DEPLOY_DIR
-        self.static_dir = settings.get('static_dir') or BASE_STATIC_DIR
 
-        templates_dir = settings.get('templates_dir') or BASE_TEMPLATES_DIR
-        self.deploy_provider = settings.get('deploy_provider') or DEPLOY_PROVIDER
+        self.static_dir = settings.get('static_dir') or STATIC_DIR
 
+        templates_dir = settings.get('templates_dir') or TEMPLATES_DIR
         service_templates_dir = os.path.join(
-            templates_dir, self.deploy_provider, 'playbooks', 'service'
+            templates_dir, 'playbooks', 'service'
         )
-
         _, _, templates = next(os.walk(service_templates_dir))
         self.templates = [
             os.path.join(service_templates_dir, t) for t in templates
@@ -191,9 +206,7 @@ class Generate(object):
         if os.path.exists(self.deploy_dir):
             shutil.rmtree(self.deploy_dir)
 
-        shutil.copytree(
-            os.path.join(self.static_dir, self.deploy_provider), self.deploy_dir
-        )
+        shutil.copytree(self.static_dir, self.deploy_dir)
 
     def generate_group_vars(self):
         group_vars_all = OrderedDict()
@@ -314,15 +327,8 @@ class Deploy(object):
         ),
     )
 
-    def __init__(self):
-        (
-            self.config,
-            self.action,
-            self.action_args,
-            self.action_kwargs,
-        ) = self._parse_cmd_args()
-
-    def _init_cmd_args(self):
+    @classmethod
+    def _init_cmd_args(cls):
         cmd_args_parser = argparse.ArgumentParser()
         cmd_args_parser.add_argument(
             '-v',
@@ -337,17 +343,18 @@ class Deploy(object):
 
         action_group = cmd_args_parser.add_mutually_exclusive_group()
 
-        for action, params in self.ACTION_CHOICES.items():
+        for action, params in cls.ACTION_CHOICES.items():
             action_group.add_argument(action, nargs='?', **params)
 
         return cmd_args_parser.parse_args()
 
-    def _parse_cmd_args(self):
+    @classmethod
+    def _parse_cmd_args(cls):
         action = None
         action_args = []
         action_kwargs = {}
 
-        args = self._init_cmd_args()
+        args = cls._init_cmd_args()
 
         if args.version:
             pass
@@ -355,6 +362,29 @@ class Deploy(object):
         config = Config(conf_file=args.config or None)
 
         return config, action, action_args, action_kwargs
+
+    def __init__(self):
+        (
+            self.config,
+            self.action,
+            self.action_args,
+            self.action_kwargs,
+        ) = self._parse_cmd_args()
+
+    def action_init(self):
+        pass
+
+    def action_generate(self):
+        return Generate(self.config)
+
+    def action_list(self):
+        pass
+
+    def action_status(self):
+        pass
+
+    def wrong_action_handler(self):
+        pass
 
     def dispatch(self):
         if self.action in self.ACTION_CHOICES:
@@ -364,37 +394,20 @@ class Deploy(object):
         else:
             action_handler = self.wrong_action_handler
 
-        return action_handler
+        return action_handler()
 
-    def wrong_action_handler(self):
-        pass
-
-    def action_init(self):
-        pass
-
-    def action_generate(self):
-        return Generate(config=self.config).do()
-
-    def action_list(self):
-        pass
-
-    def action_status(self):
-        pass
-
-    def run(self):
-        action_handler = self.dispatch()
-
+    @classmethod
+    def run(cls):
         try:
-            action_handler()
+            cls().dispatch().do()
         except Exception:
-            # TODO: log error!
             return 1
 
         return 0
 
 
 def main():
-    return Deploy().run()
+    return Deploy.run()
 
 
 if __name__ == '__main__':
