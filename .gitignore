@@ -10,4 +10,7 @@ __pycache__/
 
 venv/
 dist/
-deploy/
+
+/deploy/
+
+/deploy.yml

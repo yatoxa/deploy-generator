@@ -61,6 +61,10 @@ DEPLOY_DIR = os.path.join(WORKING_DIR, 'deploy')
 CONF_FILE = os.path.join(WORKING_DIR, 'deploy.yml')
 
 
+class ConfigFileNotFoundError(Exception):
+    pass
+
+
 class InventoryFileNotFoundError(Exception):
     pass
 
@@ -75,8 +79,12 @@ class ImproperlyConfiguredError(Exception):
 
 class Config(object):
 
-    def __init__(self, conf_file=None):
-        self.conf_file = conf_file or CONF_FILE
+    def __init__(self, conf_file, debug=False):
+        self.conf_file = conf_file
+        self.debug = debug
+
+        if not os.path.exists(self.conf_file):
+            raise ConfigFileNotFoundError
 
         with open(self.conf_file) as conf_file:
             self._config = yaml.safe_load(conf_file)
@@ -288,91 +296,64 @@ class Generate(BaseAction):
 
 class Deploy(object):
 
-    ACTION_CHOICES = OrderedDict(
-        init=dict(
+    ACTION_CHOICES = OrderedDict([
+        ('init', dict(
             help='Initializes a new deploy environment by creating'
                  ' a deploy.yml file.',
-        ),
-        generate=dict(
+        )),
+        ('generate', dict(
             help='Generates Ansible playbooks.',
-        ),
-        list=dict(
+        )),
+        ('list', dict(
             help='Shows list of services and possible actions for them.',
-        ),
-        status=dict(
+        )),
+        ('status', dict(
             help='Shows statuses of a service`s containers.',
-        ),
-        build=dict(
+        )),
+        ('build', dict(
             help='Builds a service`s containers.',
-        ),
-        deploy=dict(
+        )),
+        ('deploy', dict(
             help='Deploys a service`s containers.',
-        ),
-        start=dict(
+        )),
+        ('start', dict(
             help='Starts a service`s containers.',
-        ),
-        stop=dict(
+        )),
+        ('stop', dict(
             help='Stops a service`s containers.',
-        ),
-        restart=dict(
+        )),
+        ('restart', dict(
             help='Restarts a service`s containers.',
-        ),
-        upgrade=dict(
+        )),
+        ('upgrade', dict(
             help='Upgrades a service`s containers: stops containers'
                  ' of the previous version and then starts a new ones.',
-        ),
-        rollback=dict(
+        )),
+        ('rollback', dict(
             help='Rollback a service`s containers: stops containers'
                  ' of the new version and then starts a previous ones.',
-        ),
-    )
+        )),
+    ])
 
-    @classmethod
-    def _init_cmd_args(cls):
-        cmd_args_parser = argparse.ArgumentParser()
-        cmd_args_parser.add_argument(
-            '-v',
-            '--version',
-            help='Print the version and exit.'
-        )
-        cmd_args_parser.add_argument(
-            '-c',
-            '--config',
-            help='Configuration file path.'
-        )
+    def __init__(self, action, action_args=None, action_kwargs=None,
+                 conf_file=None, debug=False):
 
-        action_group = cmd_args_parser.add_mutually_exclusive_group()
+        self.action = action
+        self.action_args = action_args
+        self.action_kwargs = action_kwargs
 
-        for action, params in cls.ACTION_CHOICES.items():
-            action_group.add_argument(action, nargs='?', **params)
+        if self.action == 'init':
+            self.config = None
+        else:
+            self.config = Config(conf_file, debug=debug)
 
-        return cmd_args_parser.parse_args()
-
-    @classmethod
-    def _parse_cmd_args(cls):
-        action = None
-        action_args = []
-        action_kwargs = {}
-
-        args = cls._init_cmd_args()
-
-        if args.version:
-            pass
-
-        config = Config(conf_file=args.config or None)
-
-        return config, action, action_args, action_kwargs
-
-    def __init__(self):
-        (
-            self.config,
-            self.action,
-            self.action_args,
-            self.action_kwargs,
-        ) = self._parse_cmd_args()
+        self.debug = debug
 
     def action_init(self):
-        pass
+        return lambda: shutil.copy(
+            os.path.join(BASE_DIR, 'deploy.yml'),
+            os.path.join(WORKING_DIR, 'deploy.yml')
+        )
 
     def action_generate(self):
         return Generate(self.config)
@@ -397,10 +378,83 @@ class Deploy(object):
         return action_handler()
 
     @classmethod
+    def _init_cmd_args(cls):
+        cmd_args_parser = argparse.ArgumentParser()
+        cmd_args_parser.add_argument(
+            '--version',
+            action='store_true',
+            help='Print the version and exit.'
+        )
+        cmd_args_parser.add_argument(
+            '-c',
+            '--config',
+            help='Configuration file path.'
+        )
+        cmd_args_parser.add_argument(
+            '-d',
+            '--debug',
+            action='store_true',
+            help='Enables debug mode.'
+        )
+
+        action_group = cmd_args_parser.add_mutually_exclusive_group()
+
+        for action, params in cls.ACTION_CHOICES.items():
+            action_group.add_argument(action, nargs='?', **params)
+
+        return cmd_args_parser.parse_args()
+
+    @classmethod
+    def _parse_cmd_args(cls):
+        action = None
+        action_args = []
+        action_kwargs = {}
+
+        args = cls._init_cmd_args()
+
+        if args.version:
+            pass
+
+        for action_name in cls.ACTION_CHOICES:
+            action = getattr(args, action_name, None)
+
+            if action:
+                break
+
+        conf_file = args.config or CONF_FILE
+
+        return action, action_args, action_kwargs, conf_file, args.debug
+
+    @classmethod
     def run(cls):
+        (
+            action,
+            action_args,
+            action_kwargs,
+            conf_file,
+            debug
+        ) = cls._parse_cmd_args()
+
         try:
-            cls().dispatch().do()
+            action_handler = cls(
+                action,
+                action_args=action_args,
+                action_kwargs=action_kwargs,
+                conf_file=conf_file,
+                debug=debug
+            ).dispatch()
+
+            if isinstance(action_handler, BaseAction):
+                action_handler.do()
+            elif callable(action_handler):
+                action_handler()
+            else:
+                return 'Error: `action_handler` must be callable' \
+                       ' or BaseAction instance'
         except Exception:
+            if debug:
+                raise
+
             return 1
 
         return 0
