@@ -61,6 +61,22 @@ DEPLOY_DIR = os.path.join(WORKING_DIR, 'deploy')
 CONF_FILE = os.path.join(WORKING_DIR, 'deploy.yml')
 
 
+class WrongEnvironmentNameError(Exception):
+    pass
+
+
+class WrongServiceNameError(Exception):
+    pass
+
+
+class WrongGroupNameError(Exception):
+    pass
+
+
+class WrongActionNameError(Exception):
+    pass
+
+
 class ConfigFileNotFoundError(Exception):
     pass
 
@@ -81,13 +97,17 @@ class Config(object):
 
     def __init__(self, conf_file, debug=False):
         self.conf_file = conf_file
-        self.debug = debug
+        self._debug = debug
 
         if not os.path.exists(self.conf_file):
             raise ConfigFileNotFoundError
 
         with open(self.conf_file) as conf_file:
             self._config = yaml.safe_load(conf_file)
+
+    @property
+    def debug(self):
+        return self._debug
 
     def _get_config_section(self, section_name, section_type):
         section = self._config.get(section_name)
@@ -133,19 +153,12 @@ class BaseAction(object):
 class Action(BaseAction):
     playbook_exec_command = 'ansible-playbook'
 
-    def __init__(
-            self,
-            config,
-            environment_name,
-            command_name,
-            service_name=None,
-            **kwargs
-    ):
+    def __init__(self, config, command, environment, service=None, **kwargs):
         super(Action, self).__init__(config)
 
-        self.environment_name = environment_name
-        self.service_name = service_name
-        self.command_name = command_name
+        self.command_name = command
+        self.environment_name = environment
+        self.service_name = service
         self.kwargs = kwargs
 
     def resolve_inventory_file_name(self):
@@ -335,19 +348,11 @@ class Deploy(object):
         )),
     ])
 
-    def __init__(self, action, action_args=None, action_kwargs=None,
-                 conf_file=None, debug=False):
-
+    def __init__(self, config, action, action_args=None, action_kwargs=None):
+        self.config = config
         self.action = action
-        self.action_args = action_args
-        self.action_kwargs = action_kwargs
-
-        if self.action == 'init':
-            self.config = None
-        else:
-            self.config = Config(conf_file, debug=debug)
-
-        self.debug = debug
+        self.action_args = action_args or tuple()
+        self.action_kwargs = action_kwargs or dict()
 
     def action_init(self):
         return lambda: shutil.copy(
@@ -361,21 +366,24 @@ class Deploy(object):
     def action_list(self):
         pass
 
-    def action_status(self):
-        pass
+    def _action_factory(self):
+        return Action(
+            self.config,
+            self.action,
+            *self.action_args,
+            **self.action_kwargs
+        )
 
-    def wrong_action_handler(self):
-        pass
+    def _wrong_action_handler(self):
+        raise WrongActionNameError()
 
     def dispatch(self):
         if self.action in self.ACTION_CHOICES:
-            action_handler = getattr(
-                self, 'action_{}'.format(self.action), self.wrong_action_handler
-            )
-        else:
-            action_handler = self.wrong_action_handler
+            return getattr(
+                self, 'action_{}'.format(self.action), self._action_factory
+            )()
 
-        return action_handler()
+        return self._wrong_action_handler()
 
     @classmethod
     def _init_cmd_args(cls):
@@ -389,6 +397,21 @@ class Deploy(object):
             '-c',
             '--config',
             help='Configuration file path.'
+        )
+        cmd_args_parser.add_argument(
+            '-e',
+            '--environment',
+            help='Environment name.'
+        )
+        cmd_args_parser.add_argument(
+            '-s',
+            '--service',
+            help='Service name.'
+        )
+        cmd_args_parser.add_argument(
+            '-g',
+            '--group',
+            help='Group name.'
         )
         cmd_args_parser.add_argument(
             '-d',
@@ -421,9 +444,29 @@ class Deploy(object):
             if action:
                 break
 
-        conf_file = args.config or CONF_FILE
+        environment = args.environment
+        service = args.service
+        group = args.group
 
-        return action, action_args, action_kwargs, conf_file, args.debug
+        if action == 'init':
+            config = None
+        else:
+            config = Config(args.config or CONF_FILE, debug=args.debug)
+
+        if config:
+            if environment and environment not in config.get_environments():
+                raise WrongEnvironmentNameError()
+
+            if service and service not in config.get_services():
+                raise WrongServiceNameError()
+
+            if group and group not in config.get_groups():
+                raise WrongGroupNameError()
+
+        action_args.append(args.environment)
+        action_kwargs['service'] = service or group
+
+        return action, action_args, action_kwargs, config
 
     @classmethod
     def run(cls):
@@ -431,17 +474,15 @@ class Deploy(object):
             action,
             action_args,
             action_kwargs,
-            conf_file,
-            debug
+            config
         ) = cls._parse_cmd_args()
 
         try:
             action_handler = cls(
+                config,
                 action,
                 action_args=action_args,
-                action_kwargs=action_kwargs,
-                conf_file=conf_file,
-                debug=debug
+                action_kwargs=action_kwargs
             ).dispatch()
 
             if isinstance(action_handler, BaseAction):
@@ -452,7 +493,7 @@ class Deploy(object):
                 return 'Error: `action_handler` must be callable' \
                        ' or BaseAction instance'
         except Exception:
-            if debug:
+            if config.debug:
                 raise
 
             return 1
